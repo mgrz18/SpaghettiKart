@@ -546,7 +546,16 @@ void Interpreter::ImportTextureRgba16(int tile, bool importReplacement) {
         for (uint32_t x = 0; x < width; x++) {
             uint32_t clrIdx = (y * (fullImageLineSizeBytes / 2)) + (x);
 
-            uint16_t col16 = (addr[2 * clrIdx] << 8) | addr[2 * clrIdx + 1];
+            // Bounds guard: for the non-replacement path `addr` only holds `sizeBytes`
+            // bytes. When fullImageLineSizeBytes implies a row stride wider than the data
+            // actually loaded, clrIdx can index past the end of `addr`. On most platforms
+            // this silently reads adjacent heap, but on hardened allocators (Android 12+
+            // scudo / MTE) the tag mismatch turns it into a fatal SIGSEGV (reproduced on
+            // Galaxy S25 Ultra / Android 16 at intro). Clamp the read to stay in-bounds.
+            uint16_t col16 = 0;
+            if (importReplacement || (2 * clrIdx + 1 < sizeBytes)) {
+                col16 = (addr[2 * clrIdx] << 8) | addr[2 * clrIdx + 1];
+            }
             uint8_t a = col16 & 1;
             uint8_t r = col16 >> 11;
             uint8_t g = (col16 >> 6) & 0x1f;
